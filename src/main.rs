@@ -3,19 +3,25 @@ use std::io::{self, Write};
 #[derive(Debug, Clone)]
 enum StackElem {
     Number(i32),
+    Boolean(bool),
     Quotation(Vec<String>),
 }
 
-fn parse_to_stack(input: &String, stack: &mut Vec<StackElem>) -> bool {
+fn exec_raw(input: &String, mut stack: &mut Vec<StackElem>) -> bool {
     let mut vec = input
         .trim().split(" ")
         .map(String::from)
         .collect::<Vec<_>>();
-    vec.reverse();
+    exec(&mut vec, &mut stack)
+}
 
+fn exec(vec: &mut Vec<String>, mut stack: &mut Vec<StackElem>) -> bool {
     let mut quit = false;
     let mut program = Vec::new();
     let mut in_quotation = false;
+    println!("executing program: {:?}", vec);
+    vec.reverse();
+
 
     while !vec.is_empty() {
         let tok = vec.pop().unwrap();
@@ -59,7 +65,6 @@ fn parse_to_stack(input: &String, stack: &mut Vec<StackElem>) -> bool {
                 };
                 stack.push(StackElem::Number(b - a));
             },
-
             "*" => {
                 let a = match stack.pop().unwrap() {
                     StackElem::Number(num) => num,
@@ -70,6 +75,28 @@ fn parse_to_stack(input: &String, stack: &mut Vec<StackElem>) -> bool {
                     _ => panic!("`+` expects two numbers")
                 };
                 stack.push(StackElem::Number(a * b));
+            },
+            ">" => {
+                let b = match stack.pop().unwrap() {
+                    StackElem::Number(num) => num,
+                    _ => panic!("`+` expects two numbers")
+                };
+                let a = match stack.pop().unwrap() {
+                    StackElem::Number(num) => num,
+                    _ => panic!("`+` expects two numbers")
+                };
+                stack.push(StackElem::Boolean(a > b));
+            },
+            "<" => {
+                let b = match stack.pop().unwrap() {
+                    StackElem::Number(num) => num,
+                    _ => panic!("`+` expects two numbers")
+                };
+                let a = match stack.pop().unwrap() {
+                    StackElem::Number(num) => num,
+                    _ => panic!("`+` expects two numbers")
+                };
+                stack.push(StackElem::Boolean(a < b));
             },
             "dup" => {
                 let x = stack.pop().unwrap();
@@ -94,6 +121,31 @@ fn parse_to_stack(input: &String, stack: &mut Vec<StackElem>) -> bool {
                 };
                 p.reverse();
                 vec.extend(p);
+            },
+            "filter" => {
+                let filter = match stack.pop().unwrap() {
+                    StackElem::Quotation(q) => q,
+                    _ => panic!("`filter` expects two quotations")
+                };
+                let original = match stack.pop().unwrap() {
+                    StackElem::Quotation(q) => q,
+                    _ => panic!("`filter` expects two quotations")
+                };
+                let mut result = vec![];
+                for v in original {
+                    let mut sub = vec![v.clone()];
+                    sub.extend(filter.clone());
+                    quit = exec(&mut sub, &mut stack);
+                    match stack.pop().unwrap() {
+                        StackElem::Boolean(b) => {
+                            if b {
+                                result.push(v);
+                            }
+                        },
+                        _ => panic!("`filter` predicate must return a boolean")
+                    }
+                }
+                stack.push(StackElem::Quotation(result));
             },
             "quit" => {
                 quit = true;
@@ -124,7 +176,7 @@ fn main() {
             _ => {},
         }
 
-        quit = parse_to_stack(&input, &mut stack);
+        quit = exec_raw(&input, &mut stack);
         println!("{:?}", stack);
     }
 
