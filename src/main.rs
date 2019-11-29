@@ -7,20 +7,26 @@ enum StackElem {
 }
 
 fn parse_to_stack(input: &String, stack: &mut Vec<StackElem>) -> bool {
-    let vec = input.trim().split(" ").collect::<Vec<_>>();
+    let mut vec = input.trim().split(" ").collect::<Vec<_>>();
+    vec.reverse();
     let mut quit = false;
     let mut program = Vec::new();
+    let mut buffer: Vec<String> = Vec::new();
     let mut in_quotation = false;
 
-    for tok in vec {
+    while !vec.is_empty() || !buffer.is_empty() {
+        let mut tok = if !buffer.is_empty() {
+            buffer.pop().unwrap()
+        } else {
+            String::from(vec.pop().unwrap())
+        };
+
         if in_quotation {
             if tok == "]" {
                 stack.push(StackElem::Quotation(program.clone()));
                 in_quotation = false;
-                println!("closing quotation...");
                 continue;
             } else {
-                println!("pushing to quotation...");
                 program.push(String::from(tok));
                 continue;
             }
@@ -30,7 +36,6 @@ fn parse_to_stack(input: &String, stack: &mut Vec<StackElem>) -> bool {
             "[" => {
                 in_quotation = true;
                 program.clear();
-                println!("opening quotation...");
             },
             "+" => {
                 let a = match stack.pop().unwrap() {
@@ -43,6 +48,18 @@ fn parse_to_stack(input: &String, stack: &mut Vec<StackElem>) -> bool {
                 };
                 stack.push(StackElem::Number(a + b));
             },
+            "-" => {
+                let a = match stack.pop().unwrap() {
+                    StackElem::Number(num) => num,
+                    _ => panic!("`+` expects two numbers")
+                };
+                let b = match stack.pop().unwrap() {
+                    StackElem::Number(num) => num,
+                    _ => panic!("`+` expects two numbers")
+                };
+                stack.push(StackElem::Number(b - a));
+            },
+
             "*" => {
                 let a = match stack.pop().unwrap() {
                     StackElem::Number(num) => num,
@@ -58,6 +75,25 @@ fn parse_to_stack(input: &String, stack: &mut Vec<StackElem>) -> bool {
                 let x = stack.pop().unwrap();
                 stack.push(x.clone());
                 stack.push(x.clone());
+            },
+            "concat" => {
+                let y = match stack.pop().unwrap() {
+                    StackElem::Quotation(q) => q,
+                    _ => panic!("`concat` expects two quotations")
+                };
+                let x = match stack.pop().unwrap() {
+                    StackElem::Quotation(q) => q,
+                    _ => panic!("`concat` expects two quotations")
+                };
+                stack.push(StackElem::Quotation([x, y].concat()));
+            },
+            "i" => {
+                let mut p = match stack.pop().unwrap() {
+                    StackElem::Quotation(q) => q,
+                    _ => panic!("`concat` expects two quotations")
+                };
+                p.reverse();
+                buffer = p;
             },
             "quit" => {
                 quit = true;
