@@ -19,9 +19,7 @@ fn exec(vec: &mut Vec<String>, mut stack: &mut Vec<StackElem>) -> bool {
     let mut quit = false;
     let mut program = Vec::new();
     let mut in_quotation = false;
-    println!("executing program: {:?}", vec);
     vec.reverse();
-
 
     while !vec.is_empty() {
         let tok = vec.pop().unwrap();
@@ -146,6 +144,26 @@ fn exec(vec: &mut Vec<String>, mut stack: &mut Vec<StackElem>) -> bool {
                     }
                 }
                 stack.push(StackElem::Quotation(result));
+            },
+            "fold" => {
+                let pred = match stack.pop().unwrap() {
+                    StackElem::Quotation(q) => q,
+                    _ => panic!("`fold` expects a quotation predicate")
+                };
+                let iv = match stack.pop().unwrap() {
+                    StackElem::Quotation(q) => q,
+                    _ => panic!("`fold` expects a quotation initial value")
+                };
+                let to_fold = match stack.pop().unwrap() {
+                    StackElem::Quotation(q) => q,
+                    _ => panic!("`fold` expects a quotation to fold")
+                };
+                let mut sub = iv;
+                for v in to_fold {
+                    sub.push(v);
+                    sub.extend(pred.clone());
+                }
+                quit = exec(&mut sub, &mut stack);
             },
             "quit" => {
                 quit = true;
