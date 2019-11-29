@@ -7,27 +7,27 @@ enum StackElem {
 }
 
 fn parse_to_stack(input: &String, stack: &mut Vec<StackElem>) -> bool {
-    let mut vec = input.trim().split(" ").collect::<Vec<_>>();
+    let mut vec = input
+        .trim().split(" ")
+        .map(String::from)
+        .collect::<Vec<_>>();
     vec.reverse();
+
     let mut quit = false;
     let mut program = Vec::new();
-    let mut buffer: Vec<String> = Vec::new();
     let mut in_quotation = false;
 
-    while !vec.is_empty() || !buffer.is_empty() {
-        let mut tok = if !buffer.is_empty() {
-            buffer.pop().unwrap()
-        } else {
-            String::from(vec.pop().unwrap())
-        };
+    while !vec.is_empty() {
+        let tok = vec.pop().unwrap();
 
         if in_quotation {
             if tok == "]" {
-                stack.push(StackElem::Quotation(program.clone()));
+                stack.push(StackElem::Quotation(program));
+                program = Vec::new();
                 in_quotation = false;
                 continue;
             } else {
-                program.push(String::from(tok));
+                program.push(tok);
                 continue;
             }
         }
@@ -74,7 +74,7 @@ fn parse_to_stack(input: &String, stack: &mut Vec<StackElem>) -> bool {
             "dup" => {
                 let x = stack.pop().unwrap();
                 stack.push(x.clone());
-                stack.push(x.clone());
+                stack.push(x);
             },
             "concat" => {
                 let y = match stack.pop().unwrap() {
@@ -93,7 +93,7 @@ fn parse_to_stack(input: &String, stack: &mut Vec<StackElem>) -> bool {
                     _ => panic!("`concat` expects two quotations")
                 };
                 p.reverse();
-                buffer = p;
+                vec.extend(p);
             },
             "quit" => {
                 quit = true;
