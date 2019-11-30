@@ -8,6 +8,19 @@ enum StackElem {
     Quotation(Vec<String>),
 }
 
+fn to_quotation(vs: Vec<StackElem>) -> Vec<String> {
+    let mut out = Vec::new();
+    for v in vs {
+        match v {
+            StackElem::Number(n) => out.push(n.to_string()),
+            StackElem::Boolean(b) => out.push(b.to_string()),
+            StackElem::Quotation(q) => out.extend(q.clone()),
+            _ => panic!("nope")
+        }
+    }
+    out
+}
+
 fn exec_raw(input: &String, mut stack: &mut Vec<StackElem>, mut programs: &mut HashMap<String, Vec<String>>) -> bool {
     let mut vec = input
         .trim().split(" ")
@@ -191,6 +204,24 @@ fn exec(vec: &mut Vec<String>, mut stack: &mut Vec<StackElem>, mut programs: &mu
                     sub.extend(pred.clone());
                 }
                 quit = exec(&mut sub, &mut stack, &mut programs);
+            },
+            "map" => {
+                let pred = match stack.pop().unwrap() {
+                    StackElem::Quotation(q) => q,
+                    _ => panic!("`map` expects a quotation predicate")
+                };
+                let list = match stack.pop().unwrap() {
+                    StackElem::Quotation(q) => q,
+                    _ => panic!("`map` expects a quotation source")
+                };
+                let mut sub = vec![];
+                for v in list {
+                    sub.push(v);
+                    sub.extend(pred.clone());
+                }
+                let mut new_stack = Vec::new();
+                quit = exec(&mut sub, &mut new_stack, &mut programs);
+                stack.push(StackElem::Quotation(to_quotation(new_stack)));
             },
             "ifte" => {
                 let mut else_pred = match stack.pop().unwrap() {
