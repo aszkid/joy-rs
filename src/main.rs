@@ -15,7 +15,6 @@ fn to_quotation(vs: Vec<StackElem>) -> Vec<String> {
             StackElem::Number(n) => out.push(n.to_string()),
             StackElem::Boolean(b) => out.push(b.to_string()),
             StackElem::Quotation(q) => out.extend(q.clone()),
-            _ => panic!("nope")
         }
     }
     out
@@ -43,6 +42,9 @@ fn exec(vec: &mut Vec<String>, mut stack: &mut Vec<StackElem>, mut programs: &mu
     while !vec.is_empty() {
         let tok = vec.pop().unwrap();
 
+        if quit {
+            return quit;
+        }
         if in_quotation {
             if tok == "]" {
                 stack.push(StackElem::Quotation(quotation));
@@ -141,6 +143,12 @@ fn exec(vec: &mut Vec<String>, mut stack: &mut Vec<StackElem>, mut programs: &mu
                 stack.push(x.clone());
                 stack.push(x);
             },
+            "swap" => {
+                let a = stack.pop().unwrap();
+                let b = stack.pop().unwrap();
+                stack.push(a);
+                stack.push(b);
+            },
             "concat" => {
                 let y = match stack.pop().unwrap() {
                     StackElem::Quotation(q) => q,
@@ -151,6 +159,20 @@ fn exec(vec: &mut Vec<String>, mut stack: &mut Vec<StackElem>, mut programs: &mu
                     _ => panic!("`concat` expects two quotations")
                 };
                 stack.push(StackElem::Quotation([x, y].concat()));
+            },
+            "rest" => {
+                let x = match stack.pop().unwrap() {
+                    StackElem::Quotation(q) => q,
+                    _ => panic!("`concat` expects two quotations")
+                };
+                stack.push(StackElem::Quotation(x[1..].to_vec()));
+            },
+            "size" => {
+                let x = match stack.pop().unwrap() {
+                    StackElem::Quotation(q) => q,
+                    _ => panic!("`concat` expects two quotations")
+                };
+                stack.push(StackElem::Number(x.len() as i32));
             },
             "i" => {
                 let mut p = match stack.pop().unwrap() {
@@ -214,14 +236,23 @@ fn exec(vec: &mut Vec<String>, mut stack: &mut Vec<StackElem>, mut programs: &mu
                     StackElem::Quotation(q) => q,
                     _ => panic!("`map` expects a quotation source")
                 };
-                let mut sub = vec![];
                 for v in list {
+                    let mut new_stack = vec![];
+                    let mut sub = vec![];
                     sub.push(v);
                     sub.extend(pred.clone());
+                    quit = exec(&mut sub, &mut new_stack, &mut programs);
+                    stack.push(new_stack.pop().unwrap());
                 }
-                let mut new_stack = Vec::new();
-                quit = exec(&mut sub, &mut new_stack, &mut programs);
-                stack.push(StackElem::Quotation(to_quotation(new_stack)));
+            },
+            "dip" => {
+                let mut prog = match stack.pop().unwrap() {
+                    StackElem::Quotation(q) => q,
+                    _ => panic!("`map` expects a quotation predicate")
+                };
+                let val = stack.pop().unwrap();
+                quit = exec(&mut prog, &mut stack, &mut programs);
+                stack.push(val);
             },
             "ifte" => {
                 let mut else_pred = match stack.pop().unwrap() {
@@ -237,7 +268,7 @@ fn exec(vec: &mut Vec<String>, mut stack: &mut Vec<StackElem>, mut programs: &mu
                     _ => panic!("`ifte` expects an if predicate")
                 };
                 let mut stack_cloned = stack.clone();
-                quit = exec(&mut if_pred, &mut stack_cloned, &mut programs);
+                exec(&mut if_pred, &mut stack_cloned, &mut programs);
                 let if_result = match stack_cloned.pop().unwrap() {
                     StackElem::Boolean(b) => b,
                     _ => panic!("`ifte` if predicate must push a boolean")
