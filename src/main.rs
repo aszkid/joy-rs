@@ -1,12 +1,105 @@
+#[macro_use]
+extern crate nom;
+
+use nom::IResult;
+use nom::combinator::{opt, recognize, map_res, map};
+use nom::branch::{alt};
+use nom::sequence::{tuple, pair, delimited};
+use nom::character::complete::{digit1, none_of, one_of};
+use nom::bytes::complete::{tag, escaped};
+use nom::multi::{many1, separated_list};
+
 use std::io::{self, Write};
 use std::collections::HashMap;
+use std::str::FromStr;
 
 #[derive(Debug, Clone)]
 enum StackElem {
     Number(i32),
     Boolean(bool),
     Quotation(Vec<String>),
+    Decimal(f32),
+    String(String),
 }
+
+fn maybe_signed_digits(s: &str) -> IResult<&str, &str> {
+    recognize(pair(
+        opt(alt((tag("+"), tag("-")))),
+        digit1
+    ))(s)
+}
+
+fn floating_point(s: &str) -> IResult<&str, &str> {
+    recognize(tuple((
+        maybe_signed_digits,
+        tag("."),
+        digit1
+    )))(s)
+}
+
+fn decimal(s: &str) -> IResult<&str, StackElem> {
+    map_res(
+        floating_point,
+        |s| f32::from_str(s).and_then(|f| Ok(StackElem::Decimal(f)))
+    )(s)
+}
+
+fn number(s: &str) -> IResult<&str, StackElem> {
+    map_res(
+        maybe_signed_digits,
+        |s| i32::from_str(s).and_then(|n| Ok(StackElem::Number(n)))
+    )(s)
+}
+
+fn literal_in(s: &str) -> IResult<&str, &str> {
+    alt((
+        delimited(
+            tag("'"),
+            alt((
+                escaped(none_of("\\\'"), '\\', tag("'")),
+                tag("")
+            )),
+            tag("'")
+        ),
+        delimited(
+            tag("\""),
+            alt((
+                escaped(none_of("\\\""), '\\', tag("\"")),
+                tag("")
+            )),
+            tag("\"")
+        )
+    ))(s)
+}
+
+fn literal(s: &str) -> IResult<&str, StackElem> {
+    map(
+        literal_in,
+        |inn| StackElem::String(inn.to_string())
+    )(s)
+}
+
+fn boolean(s: &str) -> IResult<&str, StackElem> {
+    map_res(
+        alt((tag("true"), tag("false"))),
+        |s| bool::from_str(s).and_then(|b| Ok(StackElem::Boolean(b)))
+    )(s)
+}
+
+
+fn token(s: &str) -> IResult<&str, StackElem> {
+    alt((
+        literal, decimal, number, boolean
+    ))(s)
+}
+
+
+fn expr(s: &str) -> IResult<&str, Vec<StackElem>> {
+    separated_list(
+        many1(one_of(" \t\n")), token
+    )(s)
+}
+
 
 fn to_quotation(vs: Vec<StackElem>) -> Vec<String> {
     let mut out = Vec::new();
@@ -15,6 +108,7 @@ fn to_quotation(vs: Vec<StackElem>) -> Vec<String> {
             StackElem::Number(n) => out.push(n.to_string()),
             StackElem::Boolean(b) => out.push(b.to_string()),
             StackElem::Quotation(q) => out.extend(q.clone()),
+            _ => panic!("nope")
         }
     }
     out
@@ -332,8 +426,10 @@ fn main() {
             _ => {},
         }
 
-        quit = exec_raw(&input, &mut stack, &mut programs);
-        println!("{:?}", stack);
+        /*quit = exec_raw(&input, &mut stack, &mut programs);
+        println!("{:?}", stack);*/
+        //println!("{:?}", float32(&input));
+        println!("{:?}", expr(&input.trim()));
     }
 
 }
