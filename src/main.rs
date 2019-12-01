@@ -1,12 +1,11 @@
-#[macro_use]
 extern crate nom;
 
 use nom::IResult;
 use nom::combinator::{opt, recognize, map_res, map};
 use nom::branch::{alt};
 use nom::sequence::{tuple, pair, delimited};
-use nom::character::complete::{digit1, none_of, one_of};
-use nom::bytes::complete::{tag, escaped};
+use nom::character::complete::{alpha1, digit1, none_of, one_of};
+use nom::bytes::complete::{tag, escaped, take_while};
 use nom::multi::{many1, separated_list};
 
 use std::io::{self, Write};
@@ -18,8 +17,20 @@ enum StackElem {
     Number(i32),
     Boolean(bool),
     Quotation(Vec<String>),
+    Quoth(Box<Vec<StackElem>>),
+    Symbol(String),
     Decimal(f32),
     String(String),
+}
+
+#[derive(Debug, Clone)]
+enum Token {
+    Number(i32),
+    Boolean(bool),
+    Decimal(f32),
+    String(String),
+    Symbol(String),
+    Quotation(Box<Vec<Token>>)
 }
 
 fn maybe_signed_digits(s: &str) -> IResult<&str, &str> {
@@ -37,17 +48,17 @@ fn floating_point(s: &str) -> IResult<&str, &str> {
     )))(s)
 }
 
-fn decimal(s: &str) -> IResult<&str, StackElem> {
+fn decimal(s: &str) -> IResult<&str, Token> {
     map_res(
         floating_point,
-        |s| f32::from_str(s).and_then(|f| Ok(StackElem::Decimal(f)))
+        |s| f32::from_str(s).and_then(|f| Ok(Token::Decimal(f)))
     )(s)
 }
 
-fn number(s: &str) -> IResult<&str, StackElem> {
+fn number(s: &str) -> IResult<&str, Token> {
     map_res(
         maybe_signed_digits,
-        |s| i32::from_str(s).and_then(|n| Ok(StackElem::Number(n)))
+        |s| i32::from_str(s).and_then(|n| Ok(Token::Number(n)))
     )(s)
 }
 
@@ -72,31 +83,44 @@ fn literal_in(s: &str) -> IResult<&str, &str> {
     ))(s)
 }
 
-fn literal(s: &str) -> IResult<&str, StackElem> {
+fn literal(s: &str) -> IResult<&str, Token> {
     map(
         literal_in,
-        |inn| StackElem::String(inn.to_string())
+        |inn| Token::String(inn.to_string())
     )(s)
 }
 
-fn boolean(s: &str) -> IResult<&str, StackElem> {
+fn boolean(s: &str) -> IResult<&str, Token> {
     map_res(
         alt((tag("true"), tag("false"))),
-        |s| bool::from_str(s).and_then(|b| Ok(StackElem::Boolean(b)))
+        |s| bool::from_str(s).and_then(|b| Ok(Token::Boolean(b)))
     )(s)
 }
 
+fn symbol(s: &str) -> IResult<&str, Token> {
+    map(
+        many1(none_of(" ][()\'\"")),
+        |ss: Vec<char>| Token::Symbol(ss.into_iter().collect())
+    )(s)
+}
 
-fn token(s: &str) -> IResult<&str, StackElem> {
+fn token(s: &str) -> IResult<&str, Token> {
     alt((
-        literal, decimal, number, boolean
+        literal, decimal, number, boolean, symbol, list
     ))(s)
 }
 
 
-fn expr(s: &str) -> IResult<&str, Vec<StackElem>> {
+fn expr(s: &str) -> IResult<&str, Vec<Token>> {
     separated_list(
         many1(one_of(" \t\n")), token
+    )(s)
+}
+
+fn list(s: &str) -> IResult<&str, Token> {
+    map(
+        delimited(tag("["), expr, tag("]")),
+        |elems| Token::Quotation(Box::new(elems))
     )(s)
 }
 
@@ -429,7 +453,8 @@ fn main() {
         /*quit = exec_raw(&input, &mut stack, &mut programs);
         println!("{:?}", stack);*/
         //println!("{:?}", float32(&input));
-        println!("{:?}", expr(&input.trim()));
+        let toks = expr(&input.trim());
+        println!("parsed tokens: {:?}", expr(&input.trim()));
     }
 
 }
