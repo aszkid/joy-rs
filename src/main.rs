@@ -3,25 +3,15 @@ extern crate nom;
 use nom::IResult;
 use nom::combinator::{opt, recognize, map_res, map};
 use nom::branch::{alt};
-use nom::sequence::{tuple, pair, delimited};
-use nom::character::complete::{alpha1, digit1, none_of, one_of};
-use nom::bytes::complete::{tag, escaped, take_while};
+use nom::sequence::{tuple, pair, delimited, separated_pair};
+use nom::character::complete::{digit1, none_of, one_of};
+use nom::bytes::complete::{tag, escaped};
 use nom::multi::{many1, separated_list};
 
 use std::io::{self, Write};
 use std::collections::HashMap;
 use std::str::FromStr;
 
-#[derive(Debug, Clone)]
-enum StackElem {
-    Number(i32),
-    Boolean(bool),
-    Quotation(Vec<String>),
-    Quoth(Box<Vec<StackElem>>),
-    Symbol(String),
-    Decimal(f32),
-    String(String),
-}
 
 #[derive(Debug, Clone)]
 enum Token {
@@ -110,10 +100,13 @@ fn token(s: &str) -> IResult<&str, Token> {
     ))(s)
 }
 
+fn whitespace(s: &str) -> IResult<&str, &str> {
+    recognize(many1(one_of(" \t\n")))(s)
+}
 
 fn expr(s: &str) -> IResult<&str, Vec<Token>> {
     separated_list(
-        many1(one_of(" \t\n")), token
+        whitespace, token
     )(s)
 }
 
@@ -124,33 +117,23 @@ fn list(s: &str) -> IResult<&str, Token> {
     )(s)
 }
 
-
-fn to_quotation(vs: Vec<StackElem>) -> Vec<String> {
-    let mut out = Vec::new();
-    for v in vs {
-        match v {
-            StackElem::Number(n) => out.push(n.to_string()),
-            StackElem::Boolean(b) => out.push(b.to_string()),
-            StackElem::Quotation(q) => out.extend(q.clone()),
-            _ => panic!("nope")
+fn definition(s: &str) -> IResult<&str, (String, Vec<Token>)> {
+    map(
+        separated_pair(
+            symbol,
+            tuple((whitespace, tag("=="), whitespace)),
+            expr
+        ),
+        |(sym, b)| match sym {
+            Token::Symbol(sname) => (sname, b),
+            _ => panic!("unreachable")
         }
-    }
-    out
+    )(s)
 }
 
-fn exec_raw(input: &String, mut stack: &mut Vec<StackElem>, mut programs: &mut HashMap<String, Vec<String>>) -> bool {
-    let mut vec = input
-        .trim().split(" ")
-        .map(String::from)
-        .collect::<Vec<_>>();
-    exec(&mut vec, &mut stack, &mut programs)
-}
 
-fn exec(vec: &mut Vec<String>, mut stack: &mut Vec<StackElem>, mut programs: &mut HashMap<String, Vec<String>>) -> bool {
+/*fn exec(vec: &mut Vec<Token>, mut stack: &mut Vec<Token>, mut programs: &mut HashMap<String, Vec<String>>) -> bool {
     let mut quit = false;
-
-    let mut in_quotation = false;
-    let mut quotation = Vec::new();
 
     let mut in_definition = false;
     let mut definition = Vec::new();
@@ -427,19 +410,150 @@ fn exec(vec: &mut Vec<String>, mut stack: &mut Vec<StackElem>, mut programs: &mu
     }
 
     quit
-}
+}*/
 
+fn exec(mut toks: Vec<Token>, mut stack: &mut Vec<Token>, ps: &HashMap<String, Vec<Token>>) -> bool {
+    let mut quit = false;
+    toks.reverse();
+    while !toks.is_empty() {
+        let tok = toks.pop().unwrap();
+        match tok {
+            Token::Number(_)
+            | Token::Boolean(_)
+            | Token::Decimal(_)
+            | Token::String(_)
+            | Token::Quotation(_) => stack.push(tok),
+            Token::Symbol(sym) => match sym.as_ref() {
+                "+" => {
+                    let a = stack.pop().unwrap();
+                    let b = stack.pop().unwrap();
+                    stack.push(match (a,b) {
+                        (Token::Number(x), Token::Number(y)) => Token::Number(x+y),
+                        (Token::Decimal(x), Token::Decimal(y)) => Token::Decimal(x+y),
+                        _ => panic!("`+` needs numbers or decimals")
+                    });
+                },
+                "-" => {
+                    let a = stack.pop().unwrap();
+                    let b = stack.pop().unwrap();
+                    stack.push(match (a,b) {
+                        (Token::Number(x), Token::Number(y)) => Token::Number(y-x),
+                        (Token::Decimal(x), Token::Decimal(y)) => Token::Decimal(y-x),
+                        _ => panic!("`-` needs numbers or decimals")
+                    });
+                },
+                "*" => {
+                    let a = stack.pop().unwrap();
+                    let b = stack.pop().unwrap();
+                    stack.push(match (a,b) {
+                        (Token::Number(x), Token::Number(y)) => Token::Number(x*y),
+                        (Token::Decimal(x), Token::Decimal(y)) => Token::Decimal(x*y),
+                        _ => panic!("`*` needs numbers or decimals")
+                    });
+                },
+                ">" => {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(match (a,b) {
+                        (Token::Number(x), Token::Number(y)) => Token::Boolean(x>y),
+                        (Token::Decimal(x), Token::Decimal(y)) => Token::Boolean(x>y),
+                        _ => panic!("`>` needs numbers or decimals")
+                    });
+                },
+                "<" => {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(match (a,b) {
+                        (Token::Number(x), Token::Number(y)) => Token::Boolean(x<y),
+                        (Token::Decimal(x), Token::Decimal(y)) => Token::Boolean(x<y),
+                        _ => panic!("`<` needs numbers or decimals")
+                    });
+                },
+                "=" => {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(match (a,b) {
+                        (Token::Number(x), Token::Number(y)) => Token::Boolean(x==y),
+                        (Token::Decimal(x), Token::Decimal(y)) => Token::Boolean(x==y),
+                        _ => panic!("`=` needs numbers or decimals")
+                    });
+                },
+                "pop" => {
+                    stack.pop().unwrap();
+                },
+                "dup" => {
+                    let a = stack.pop().unwrap();
+                    stack.push(a.clone());
+                    stack.push(a);
+                },
+                "swap" => {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(b);
+                    stack.push(a);
+                },
+                "size" => {
+                    if let Token::Quotation(q) = stack.pop().unwrap() {
+                        let len = q.len();
+                        stack.push(Token::Quotation(q));
+                        stack.push(Token::Number(len as i32));
+                    } else {
+                        panic!("`size` expects a quotation");
+                    }
+                },
+                "i" => {
+                    if let Token::Quotation(mut q) = stack.pop().unwrap() {
+                        q.reverse();
+                        toks.extend(*q);
+                    } else {
+                        panic!("`i` expects a quotation");
+                    }
+                },
+                "ifte" => {
+                    let else_p = match stack.pop().unwrap() {
+                        Token::Quotation(q) => q,
+                        _ => panic!("`ifte` expects an else program")
+                    };
+                    let then_p = match stack.pop().unwrap() {
+                        Token::Quotation(q) => q,
+                        _ => panic!("`ifte` expects a then program")
+                    };
+                    let if_p = match stack.pop().unwrap() {
+                        Token::Quotation(q) => q,
+                        _ => panic!("`ifte` expects an if program")
+                    };
+                    let mut new_stack = Vec::new();
+                    exec(*if_p, &mut new_stack, ps);
+                    match new_stack.pop().unwrap() {
+                        Token::Boolean(true) => exec(*then_p, &mut stack, ps),
+                        Token::Boolean(false) => exec(*else_p, &mut stack, ps),
+                        _ => panic!("`ifte` if program must return a boolean")
+                    };
+                },
+                "quit" => {
+                    quit = true;
+                    break;
+                },
+                _ => match ps.get(&sym) {
+                    Some(p) => {
+                        quit = exec(p.clone(), &mut stack, ps);
+                    },
+                    _ => {
+                        println!("undefined symbol `{}`", sym);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    quit
+}
 
 fn main() {
     println!("    a joy interpreter");
-    let mut stack: Vec<StackElem> = Vec::new();
-    let mut quit = false;
-
+    let mut stack = Vec::new();
     let mut programs = HashMap::new();
-    programs.insert(
-        "square".to_string(),
-        vec!["dup", "*"].iter().map(|x| x.to_string()).collect::<Vec<_>>()
-    );
+    let mut quit = false;
 
     while !quit {
         print!("> ");
@@ -450,11 +564,18 @@ fn main() {
             _ => {},
         }
 
-        /*quit = exec_raw(&input, &mut stack, &mut programs);
-        println!("{:?}", stack);*/
-        //println!("{:?}", float32(&input));
-        let toks = expr(&input.trim());
-        println!("parsed tokens: {:?}", expr(&input.trim()));
+        if let Ok(("", (sym, defn))) = definition(&input.trim()) {
+            programs.insert(sym, defn);
+            continue;
+        }
+        match expr(&input.trim()) {
+            Ok(("", toks)) => {
+                quit = exec(toks, &mut stack, &programs);
+                println!("{:?}", stack);
+            },
+            Err(e) => println!("parse error: {:?}", e),
+            _ => println!("leftover input; parse error")
+        }
     }
 
 }
