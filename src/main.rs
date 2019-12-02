@@ -568,14 +568,20 @@ fn main() {
             programs.insert(sym, defn);
             continue;
         }
-        match expr(&input.trim()) {
-            Ok(("", toks)) => {
-                quit = exec(toks, &mut stack, &programs);
-                println!("{:?}", stack);
-            },
-            Err(e) => println!("parse error: {:?}", e),
-            _ => println!("leftover input; parse error")
+        let mut new_input: &str = &input.trim().as_ref();
+        while !quit && !new_input.is_empty() {
+            let parser = tuple((opt(whitespace), token));
+            match parser(&new_input) {
+                Ok((left, tok)) => {
+                    quit = exec(vec![tok.1], &mut stack, &programs);
+                    new_input = left;
+                },
+                _ => {
+                    break;
+                }
+            }
         }
+        println!("{:?}", stack);
     }
 
 }
